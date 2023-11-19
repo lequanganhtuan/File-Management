@@ -203,7 +203,7 @@ void copy_file(const char *src_name, const char *dest_name) {
     if (S_ISDIR(dest_stat.st_mode)) {
         char dest_file_path[PATH_MAX];
 
-
+        // Duplicate the source name to create a non-const version
         char *src_name_copy = strdup(src_name);
         if (src_name_copy == NULL) {
             perror("copy_file");
@@ -212,7 +212,7 @@ void copy_file(const char *src_name, const char *dest_name) {
 
         snprintf(dest_file_path, sizeof(dest_file_path), "%s/%s", dest_name, basename(src_name_copy));
 
-
+        // Free the allocated memory for the duplicated source name
         free(src_name_copy);
 
         FILE *src_file = fopen(src_name, "rb");
@@ -239,55 +239,22 @@ void copy_file(const char *src_name, const char *dest_name) {
     }
 }
 
-void move_file(const char *old_path, const char *new_path) {
+void move_file(const char *old_path, const char *filename, const char *new_path) {
     char old_full_path[PATH_MAX];
     char new_full_path[PATH_MAX];
 
     snprintf(old_full_path, sizeof(old_full_path), "%s/%s", getcwd(NULL, 0), old_path);
     snprintf(new_full_path, sizeof(new_full_path), "%s/%s", getcwd(NULL, 0), new_path);
 
-    struct stat old_stat;
-    if (stat(old_full_path, &old_stat) == -1) {
-        perror("move_file");
-        exit(EXIT_FAILURE);
-    }
+    printf("Debug - Old Path: %s\n", old_full_path);
+    printf("Debug - New Path: %s\n", new_full_path);
 
-    if (S_ISDIR(old_stat.st_mode)) {
-
-        if (rename(old_full_path, new_full_path) == 0) {
-            printf("Thư mục di chuyển thành công: %s -> %s\n", old_full_path, new_full_path);
-        } else {
-            perror("move_file");
-        }
+    if (rename(old_full_path, new_full_path) == 0) {
+        printf("File moved successfully: %s -> %s\n", old_full_path, new_full_path);
     } else {
-
-        FILE *old_file = fopen(old_full_path, "rb");
-        FILE *new_file = fopen(new_full_path, "wb");
-
-        if (old_file == NULL || new_file == NULL) {
-            perror("move_file");
-            exit(EXIT_FAILURE);
-        }
-
-        char buffer[1024];
-        size_t bytesRead;
-
-        while ((bytesRead = fread(buffer, 1, sizeof(buffer), old_file)) > 0) {
-            fwrite(buffer, 1, bytesRead, new_file);
-        }
-
-        fclose(old_file);
-        fclose(new_file);
-
-
-        if (remove(old_full_path) == 0) {
-            printf("File di chuyển thành công: %s -> %s\n", old_full_path, new_full_path);
-        } else {
-            perror("move_file");
-        }
+        perror("move_file");
     }
 }
-
 
 
 
