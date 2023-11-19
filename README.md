@@ -24,7 +24,7 @@ Chương trình này cung cấp một số chức năng cơ bản để thao tá
    ./programname -rn old_filename new_filename [path]
 6. Di chuyển tệp tin: Di chuyển một tệp tin từ một vị trí đến vị trí khác.
    ```bash
-   ./programname -cd oldpath filename newpath
+   ./programname -cd filename oldpath newpath
 7. Liệt kê tệp tin trong thư mục: Hiển thị danh sách các tệp tin trong thư mục được chỉ định.
    ```bash
    ./programname -ls [path]
