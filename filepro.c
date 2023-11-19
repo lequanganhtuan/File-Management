@@ -7,6 +7,8 @@
 #include <grp.h>
 #include <time.h>
 #include <unistd.h>
+#include <libgen.h>
+
 
 void print_file_info(const char *name) {
     struct stat file_stat;
@@ -62,6 +64,11 @@ void print_file_info(const char *name) {
 }
 
 void create_file(const char *name) {
+    if (access(name, F_OK) != -1) {
+        fprintf(stderr, "Error: File '%s' already exists. Please choose a different name.\n", name);
+        exit(EXIT_FAILURE);
+    }
+
     FILE *file = fopen(name, "w");
     if (file == NULL) {
         perror("create_file");
@@ -72,6 +79,18 @@ void create_file(const char *name) {
 }
 
 void read_file(const char *name) {
+    struct stat file_stat;
+
+    if (stat(name, &file_stat) == -1) {
+        perror("stat");
+        exit(EXIT_FAILURE);
+    }
+
+    if (S_ISDIR(file_stat.st_mode)) {
+        fprintf(stderr, "Error: Cannot read a directory. Please provide a valid file name.\n");
+        exit(EXIT_FAILURE);
+    }
+
     FILE *file = fopen(name, "r");
     if (file == NULL) {
         perror("read_file");
@@ -87,6 +106,18 @@ void read_file(const char *name) {
 }
 
 void edit_file(const char *name) {
+    struct stat file_stat;
+
+    if (stat(name, &file_stat) == -1) {
+        perror("stat");
+        exit(EXIT_FAILURE);
+    }
+
+    if (S_ISDIR(file_stat.st_mode)) {
+        fprintf(stderr, "Error: Cannot edit a directory. Please provide a valid file name.\n");
+        exit(EXIT_FAILURE);
+    }
+
     char command[256];
     snprintf(command, sizeof(command), "nano %s", name);
     system(command);
@@ -94,14 +125,60 @@ void edit_file(const char *name) {
 }
 
 void delete_file(const char *name) {
-    if (remove(name) == 0) {
-        printf("File deleted successfully: %s\n", name);
+    struct stat file_stat;
+
+    if (stat(name, &file_stat) == -1) {
+        perror("stat");
+        exit(EXIT_FAILURE);
+    }
+
+    if (S_ISDIR(file_stat.st_mode)) {
+        DIR *dir;
+        struct dirent *entry;
+        int is_empty = 1;
+
+        if ((dir = opendir(name)) != NULL) {
+            while ((entry = readdir(dir)) != NULL) {
+                if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                    is_empty = 0;
+                    break;
+                }
+            }
+            closedir(dir);
+        } else {
+            perror("delete_file");
+            exit(EXIT_FAILURE);
+        }
+
+        if (is_empty) {
+            if (rmdir(name) == 0) {
+                printf("Directory deleted successfully: %s\n", name);
+            } else {
+                perror("delete_file");
+            }
+        } else {
+            fprintf(stderr, "Error: Cannot delete non-empty directory '%s'.\n", name);
+        }
     } else {
-        perror("delete_file");
+        if (remove(name) == 0) {
+            printf("File deleted successfully: %s\n", name);
+        } else {
+            perror("delete_file");
+        }
     }
 }
 
 void rename_file(const char *old_name, const char *new_name) {
+    if (strcmp(old_name, new_name) == 0) {
+        fprintf(stderr, "Error: New file name is the same as the old file name. Please choose a different name.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (access(new_name, F_OK) != -1) {
+        fprintf(stderr, "Error: File '%s' already exists. Please choose a different name.\n", new_name);
+        exit(EXIT_FAILURE);
+    }
+
     if (rename(old_name, new_name) == 0) {
         printf("File renamed successfully: %s -> %s\n", old_name, new_name);
     } else {
@@ -110,40 +187,109 @@ void rename_file(const char *old_name, const char *new_name) {
 }
 
 void copy_file(const char *src_name, const char *dest_name) {
-    FILE *src_file = fopen(src_name, "rb");
-    FILE *dest_file = fopen(dest_name, "wb");
+    struct stat src_stat;
+    struct stat dest_stat;
 
-    if (src_file == NULL || dest_file == NULL) {
-        perror("copy_file");
+    if (stat(src_name, &src_stat) == -1 || stat(dest_name, &dest_stat) == -1) {
+        perror("stat");
         exit(EXIT_FAILURE);
     }
 
-    char buffer[1024];
-    size_t bytesRead;
-
-    while ((bytesRead = fread(buffer, 1, sizeof(buffer), src_file)) > 0) {
-        fwrite(buffer, 1, bytesRead, dest_file);
+    if (S_ISDIR(src_stat.st_mode)) {
+        fprintf(stderr, "Error: Cannot copy a directory. Please provide a valid file name.\n");
+        exit(EXIT_FAILURE);
     }
 
-    fclose(src_file);
-    fclose(dest_file);
+    if (S_ISDIR(dest_stat.st_mode)) {
+        char dest_file_path[PATH_MAX];
 
-    printf("File copied successfully: %s -> %s\n", src_name, dest_name);
+
+        char *src_name_copy = strdup(src_name);
+        if (src_name_copy == NULL) {
+            perror("copy_file");
+            exit(EXIT_FAILURE);
+        }
+
+        snprintf(dest_file_path, sizeof(dest_file_path), "%s/%s", dest_name, basename(src_name_copy));
+
+
+        free(src_name_copy);
+
+        FILE *src_file = fopen(src_name, "rb");
+        FILE *dest_file = fopen(dest_file_path, "wb");
+
+        if (src_file == NULL || dest_file == NULL) {
+            perror("copy_file");
+            exit(EXIT_FAILURE);
+        }
+
+        char buffer[1024];
+        size_t bytesRead;
+
+        while ((bytesRead = fread(buffer, 1, sizeof(buffer), src_file)) > 0) {
+            fwrite(buffer, 1, bytesRead, dest_file);
+        }
+
+        fclose(src_file);
+        fclose(dest_file);
+
+        printf("File copied successfully: %s -> %s\n", src_name, dest_file_path);
+    } else {
+        fprintf(stderr, "Error: Destination '%s' is not a directory. Please provide a valid directory name.\n", dest_name);
+    }
 }
 
-void move_file(const char *old_path, const char *filename, const char *new_path) {
+void move_file(const char *old_path, const char *new_path) {
     char old_full_path[PATH_MAX];
     char new_full_path[PATH_MAX];
 
-    snprintf(old_full_path, sizeof(old_full_path), "%s/%s", old_path, filename);
-    snprintf(new_full_path, sizeof(new_full_path), "%s/%s", new_path, filename);
+    snprintf(old_full_path, sizeof(old_full_path), "%s/%s", getcwd(NULL, 0), old_path);
+    snprintf(new_full_path, sizeof(new_full_path), "%s/%s", getcwd(NULL, 0), new_path);
 
-    if (rename(old_full_path, new_full_path) == 0) {
-        printf("File moved successfully: %s -> %s\n", old_full_path, new_full_path);
-    } else {
+    struct stat old_stat;
+    if (stat(old_full_path, &old_stat) == -1) {
         perror("move_file");
+        exit(EXIT_FAILURE);
+    }
+
+    if (S_ISDIR(old_stat.st_mode)) {
+
+        if (rename(old_full_path, new_full_path) == 0) {
+            printf("Thư mục di chuyển thành công: %s -> %s\n", old_full_path, new_full_path);
+        } else {
+            perror("move_file");
+        }
+    } else {
+
+        FILE *old_file = fopen(old_full_path, "rb");
+        FILE *new_file = fopen(new_full_path, "wb");
+
+        if (old_file == NULL || new_file == NULL) {
+            perror("move_file");
+            exit(EXIT_FAILURE);
+        }
+
+        char buffer[1024];
+        size_t bytesRead;
+
+        while ((bytesRead = fread(buffer, 1, sizeof(buffer), old_file)) > 0) {
+            fwrite(buffer, 1, bytesRead, new_file);
+        }
+
+        fclose(old_file);
+        fclose(new_file);
+
+
+        if (remove(old_full_path) == 0) {
+            printf("File di chuyển thành công: %s -> %s\n", old_full_path, new_full_path);
+        } else {
+            perror("move_file");
+        }
     }
 }
+
+
+
 
 void list_files(const char *path) {
     DIR *dir;
@@ -175,7 +321,7 @@ int main(int argc, char *argv[]) {
     char *command = argv[1];
     char *old_name = argv[2];
     char *new_name = (argc == 5 && (strcmp(command, "-rn") == 0 || strcmp(command, "-cp") == 0)) ? argv[3] : NULL;
-    char *path = (argc == 5) ? argv[4] : ".";
+    char *path = (argc >= 4) ? argv[argc-1] : ".";
     char *new_path = (argc == 6 && strcmp(command, "-cd") == 0) ? argv[5] : ".";
 
     if (access(path, F_OK) == -1) {
@@ -212,7 +358,7 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(command, "-cd") == 0) {
         move_file(path, old_name, new_path);
     } else if (strcmp(command, "-ls") == 0) {
-        list_files(path);
+        list_files(old_name);
     } else {
         fprintf(stderr, "Invalid command\n");
         exit(EXIT_FAILURE);
