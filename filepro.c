@@ -124,7 +124,7 @@ void edit_file(const char *name) {
     printf("File edited successfully: %s\n", name);
 }
 
-void delete_file(const char *name) {
+int delete_file(const char *name) {
     struct stat file_stat;
 
     if (stat(name, &file_stat) == -1) {
@@ -152,7 +152,7 @@ void delete_file(const char *name) {
 
         if (is_empty) {
             if (rmdir(name) == 0) {
-                printf("Directory deleted successfully: %s\n", name);
+                return 0;
             } else {
                 perror("delete_file");
             }
@@ -161,11 +161,12 @@ void delete_file(const char *name) {
         }
     } else {
         if (remove(name) == 0) {
-            printf("File deleted successfully: %s\n", name);
+            return 0;
         } else {
             perror("delete_file");
         }
     }
+    return 1;
 }
 
 void rename_file(const char *old_name, const char *new_name) {
@@ -191,12 +192,10 @@ void copy_file(const char *src_name, const char *dest_name) {
     struct stat dest_stat;
 
     if (stat(src_name, &src_stat) == -1 || stat(dest_name, &dest_stat) == -1) {
-        perror("stat");
         exit(EXIT_FAILURE);
     }
 
     if (S_ISDIR(src_stat.st_mode)) {
-        fprintf(stderr, "Error: Cannot copy a directory. Please provide a valid file name.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -206,7 +205,6 @@ void copy_file(const char *src_name, const char *dest_name) {
         // Duplicate the source name to create a non-const version
         char *src_name_copy = strdup(src_name);
         if (src_name_copy == NULL) {
-            perror("copy_file");
             exit(EXIT_FAILURE);
         }
 
@@ -219,7 +217,6 @@ void copy_file(const char *src_name, const char *dest_name) {
         FILE *dest_file = fopen(dest_file_path, "wb");
 
         if (src_file == NULL || dest_file == NULL) {
-            perror("copy_file");
             exit(EXIT_FAILURE);
         }
 
@@ -232,28 +229,17 @@ void copy_file(const char *src_name, const char *dest_name) {
 
         fclose(src_file);
         fclose(dest_file);
-
-        printf("File copied successfully: %s -> %s\n", src_name, dest_file_path);
     } else {
         fprintf(stderr, "Error: Destination '%s' is not a directory. Please provide a valid directory name.\n", dest_name);
     }
 }
 
-void move_file(const char *old_path, const char *filename, const char *new_path) {
-    char old_full_path[PATH_MAX];
-    char new_full_path[PATH_MAX];
+void move_file(char *old_path, char *new_path) {
 
-    snprintf(old_full_path, sizeof(old_full_path), "%s/%s", getcwd(NULL, 0), old_path);
-    snprintf(new_full_path, sizeof(new_full_path), "%s/%s", getcwd(NULL, 0), new_path);
+    copy_file(old_path, new_path);
+    delete_file(old_path);
 
-    printf("Debug - Old Path: %s\n", old_full_path);
-    printf("Debug - New Path: %s\n", new_full_path);
-
-    if (rename(old_full_path, new_full_path) == 0) {
-        printf("File moved successfully: %s -> %s\n", old_full_path, new_full_path);
-    } else {
-        perror("move_file");
-    }
+    printf("Move successfully\n");
 }
 
 
@@ -279,57 +265,58 @@ void list_files(const char *path) {
     closedir(dir);
 }
 
+void checkpath(char * path) {
+    if (access(path, F_OK) == -1) {
+    	fprintf(stderr, "Error: Path '%s' does not exist. Please enter a valid path.\n", path);
+    	exit(EXIT_FAILURE);
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s -c/-r/-e/-d/-rn/-cp/-cd/-ls old_filename new_filename [path]\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
-    char *command = argv[1];
-    char *old_name = argv[2];
-    char *new_name = (argc == 5 && (strcmp(command, "-rn") == 0 || strcmp(command, "-cp") == 0)) ? argv[3] : NULL;
-    char *path = (argc >= 4) ? argv[argc-1] : ".";
-    char *new_path = (argc == 6 && strcmp(command, "-cd") == 0) ? argv[5] : ".";
+    char * command = argv[1];
+    char * filename = argv[2];
+    char * path = (argc >= 4) ? argv[argc-1] : ".";
+    char * new_path = "";
 
-    if (access(path, F_OK) == -1) {
-        fprintf(stderr, "Error: Path '%s' does not exist. Please enter a valid path.\n", path);
-        exit(EXIT_FAILURE);
-    }
-
+    checkpath(path);
     chdir(path);
-
+    
     if (strcmp(command, "-p") == 0) {
-        print_file_info(old_name);
+    	print_file_info(filename);
     } else if (strcmp(command, "-c") == 0) {
-        create_file(old_name);
+    	create_file(filename);
     } else if (strcmp(command, "-r") == 0) {
-        read_file(old_name);
+    	read_file(filename);
     } else if (strcmp(command, "-e") == 0) {
-        edit_file(old_name);
+    	edit_file(filename);
     } else if (strcmp(command, "-d") == 0) {
-        delete_file(old_name);
+    	if (delete_file(filename) == 0) {
+    		printf("Deleted successfully \n");
+    	};
+    } else if (strcmp(command, "-ls") == 0) {
+    	list_files(filename);
+    } else if (strcmp(command, "-cd") == 0) {
+    	path = (argc >= 3) ? argv[2] : ".";
+    	checkpath(path);
+	new_path = (argc >= 4) ? argv[3] : ".";
+	checkpath(new_path);
+    	move_file(path, new_path);
     } else if (strcmp(command, "-rn") == 0) {
-        if (new_name != NULL) {
-            rename_file(old_name, new_name);
+	char * new_filename = (argc >= 4) ? argv[3] : NULL;
+        if (new_filename != NULL) {
+            rename_file(filename, new_filename);
         } else {
             fprintf(stderr, "Usage: %s -rn old_filename new_filename [path]\n", argv[0]);
             exit(EXIT_FAILURE);
         }
-    } else if (strcmp(command, "-cp") == 0) {
-        if (new_name != NULL) {
-            copy_file(old_name, new_name);
-        } else {
-            fprintf(stderr, "Usage: %s -cp old_filename new_filename [path]\n", argv[0]);
-            exit(EXIT_FAILURE);
-        }
-    } else if (strcmp(command, "-cd") == 0) {
-        move_file(path, old_name, new_path);
-    } else if (strcmp(command, "-ls") == 0) {
-        list_files(old_name);
     } else {
         fprintf(stderr, "Invalid command\n");
-        exit(EXIT_FAILURE);
+        exit(EXIT_FAILURE);	
     }
-
     return 0;
 }
